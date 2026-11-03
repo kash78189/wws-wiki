@@ -33,6 +33,11 @@ jobs:
             echo "url=https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Self-test
+        run: |
+          node worker/test/local-test.mjs
+          node tools/test/run.mjs
+
       - name: Build static site
         env:
           SITE_URL: ${{ steps.site.outputs.url }}
