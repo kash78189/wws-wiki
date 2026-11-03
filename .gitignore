@@ -1,0 +1,13 @@
+# 依赖（本项目构建脚本零依赖，仅为保险起见忽略）
+node_modules/
+
+# 构建产物
+dist/
+
+# 侦察/临时文件
+research/
+*.log
+
+# 系统
+.DS_Store
+Thumbs.db

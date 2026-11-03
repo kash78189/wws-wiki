@@ -1,0 +1,13 @@
+{
+  "name": "wws-wiki",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "万物书 · 幻想图鉴 — 饥荒模组「万物书」资料站",
+  "scripts": {
+    "scrape": "node tools/scrape.mjs",
+    "build": "node tools/build.mjs",
+    "dev": "node tools/build.mjs --serve",
+    "all": "node tools/scrape.mjs && node tools/build.mjs"
+  }
+}
