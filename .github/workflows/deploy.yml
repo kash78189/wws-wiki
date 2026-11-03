@@ -37,6 +37,11 @@ jobs:
         env:
           SITE_URL: ${{ steps.site.outputs.url }}
           REPO_URL: https://github.com/${{ github.repository }}
+          GH_OWNER: ${{ github.repository_owner }}
+          GH_REPO: ${{ github.event.repository.name }}
+          GH_BRANCH: ${{ github.event.repository.default_branch }}
+          GH_ADMINS: ${{ vars.GH_ADMINS }}
+          GH_OAUTH_CLIENT_ID: ${{ vars.GH_OAUTH_CLIENT_ID }}
         run: node tools/build.mjs
 
       - uses: actions/configure-pages@v5

@@ -84,6 +84,13 @@ function localImageName(url) {
   return `${hash}${ext}`;
 }
 
+/** 分类 slug：FNV-1a 32bit（与构建器 / 编辑后台保持一致） */
+function catSlug(name) {
+  let x = 0x811c9dc5;
+  for (let i = 0; i < name.length; i++) { x ^= name.charCodeAt(i); x = Math.imul(x, 0x01000193) >>> 0; }
+  return "cat-" + (x >>> 0).toString(16).padStart(8, "0");
+}
+
 /** 生成 URL slug：优先用 DST prefab code，非法或有重复时回退到 id */
 function makeSlug(code, id, used, title) {
   let base = String(code ?? "").trim();
@@ -234,7 +241,7 @@ async function main() {
   const categories = [...counts.keys()]
     .map((name) => ({
       name,
-      slug: "cat-" + createHash("md5").update(name).digest("hex").slice(0, 8),
+      slug: catSlug(name),
       count: counts.get(name),
       level: navOrder.get(name)?.level ?? 0,
       order: navOrder.get(name)?.order ?? 999,

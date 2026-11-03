@@ -4,90 +4,90 @@
   "type": "wws",
   "source": "https://wiki.alan.plus/#/?type=wws",
   "api": "https://wiki.alan.plus/api",
-  "scrapedAt": "2026-11-03T10:19:24.690Z",
+  "scrapedAt": "2026-11-03T12:56:57.229Z",
   "total": 307
  },
  "categories": [
   {
    "name": "幻想岛屿",
-   "slug": "cat-499645f1",
+   "slug": "cat-e9f6ca1d",
    "count": 9,
    "level": 100,
    "order": 0
   },
   {
    "name": "幻想房屋和生物",
-   "slug": "cat-d1aa13d0",
+   "slug": "cat-b4514bdf",
    "count": 8,
    "level": 99,
    "order": 1
   },
   {
    "name": "幻想特殊生物",
-   "slug": "cat-947aaabb",
+   "slug": "cat-222d4d48",
    "count": 3,
    "level": 98,
    "order": 2
   },
   {
    "name": "幻想植物",
-   "slug": "cat-fbcbee25",
+   "slug": "cat-cab36ec1",
    "count": 33,
    "level": 97,
    "order": 3
   },
   {
    "name": "幻想建筑",
-   "slug": "cat-2ebca165",
+   "slug": "cat-fa595976",
    "count": 18,
    "level": 96,
    "order": 4
   },
   {
    "name": "幻想道具",
-   "slug": "cat-b98ff6a8",
+   "slug": "cat-d873772d",
    "count": 24,
    "level": 95,
    "order": 5
   },
   {
    "name": "幻想装饰",
-   "slug": "cat-95ce1844",
+   "slug": "cat-e9164f0e",
    "count": 108,
    "level": 94,
    "order": 6
   },
   {
    "name": "幻想掉落物",
-   "slug": "cat-66b39f94",
+   "slug": "cat-52af7078",
    "count": 73,
    "level": 93,
    "order": 7
   },
   {
    "name": "幻想料理",
-   "slug": "cat-aa9f4371",
+   "slug": "cat-7fe26730",
    "count": 23,
    "level": 92,
    "order": 8
   },
   {
    "name": "魔法药剂",
-   "slug": "cat-5d093d16",
+   "slug": "cat-ee09ca2f",
    "count": 6,
    "level": 91,
    "order": 9
   },
   {
    "name": "幻想房屋",
-   "slug": "cat-32630f10",
+   "slug": "cat-bce904f5",
    "count": 1,
    "level": 0,
    "order": 999
   },
   {
    "name": "幻想生物",
-   "slug": "cat-6043f34a",
+   "slug": "cat-c41c974f",
    "count": 1,
    "level": 0,
    "order": 999

@@ -22,6 +22,18 @@ export const CONFIG = {
   repoUrl: process.env.REPO_URL || "https://github.com/",
   sourceUrl: "https://wiki.alan.plus/#/?type=wws",
   workshopUrl: "https://steamcommunity.com/sharedfiles/filedetails/?id=3158409336",
+  // —— 编辑后台（以 GitHub 仓库作为后端） ——
+  repo: {
+    owner: process.env.GH_OWNER || "",
+    name: process.env.GH_REPO || "",
+    branch: process.env.GH_BRANCH || process.env.GITHUB_REF_NAME || "main",
+  },
+  // 留空 = 以仓库写权限为准；填写后为额外白名单（GitHub 用户名）
+  admins: (process.env.GH_ADMINS || "").split(",").map((s) => s.trim()).filter(Boolean),
+  // 可选：GitHub OAuth App 的 client_id（启用“设备码登录”）
+  oauthClientId: process.env.GH_OAUTH_CLIENT_ID || "",
+  dataPath: "data/wws.json",
+  imagesPath: "src/images",
 };
 
 /* ============================ 工具函数 ============================ */
@@ -29,6 +41,23 @@ export const esc = (s = "") =>
   String(s).replace(/[&<>"']/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m]));
 
 export const attr = (s = "") => esc(s).replace(/\n/g, " ");
+
+/** 分类 slug：FNV-1a 32bit，与编辑后台保持一致 */
+export const catSlug = (name) => {
+  let x = 0x811c9dc5;
+  for (let i = 0; i < name.length; i++) { x ^= name.charCodeAt(i); x = Math.imul(x, 0x01000193) >>> 0; }
+  return "cat-" + (x >>> 0).toString(16).padStart(8, "0");
+};
+
+/** 由词条自动归纳分类，hint 仅用于保留原有顺序 */
+export function buildCategories(entries, hint = []) {
+  const counts = new Map();
+  for (const e of entries) counts.set(e.category, (counts.get(e.category) || 0) + 1);
+  const order = new Map(hint.map((c, i) => [typeof c === "string" ? c : c.name, i]));
+  return [...counts.keys()]
+    .map((name) => ({ name, slug: catSlug(name), count: counts.get(name), order: order.has(name) ? order.get(name) : 9999 }))
+    .sort((a, b) => a.order - b.order || b.count - a.count || a.name.localeCompare(b.name, "zh"));
+}
 
 const LOGO = `<svg viewBox="0 0 48 48" fill="none" aria-hidden="true"><defs><linearGradient id="lg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f3cd90"/><stop offset="1" stop-color="#c98f3d"/></linearGradient></defs><circle cx="24" cy="24" r="22" stroke="url(#lg)" stroke-opacity=".45" stroke-width="1.4"/><path d="M24 15c-3.4-2.2-7.6-2.9-11.6-2.9-.9 0-1.4.6-1.4 1.5v17.6c0 .9.6 1.5 1.5 1.4 3.7-.2 7.8.5 11.5 2.6V15z" fill="url(#lg)" fill-opacity=".16" stroke="url(#lg)" stroke-width="1.5" stroke-linejoin="round"/><path d="M24 15c3.4-2.2 7.6-2.9 11.6-2.9.9 0 1.4.6 1.4 1.5v17.6c0 .9-.6 1.5-1.5 1.4-3.7-.2-7.8.5-11.5 2.6V15z" fill="url(#lg)" fill-opacity=".16" stroke="url(#lg)" stroke-width="1.5" stroke-linejoin="round"/><path d="M24 15v20.2" stroke="url(#lg)" stroke-width="1.5" stroke-linecap="round"/><path d="M24 20.5v-4.6" stroke="url(#lg)" stroke-width="1.7" stroke-linecap="round"/><path d="M24 17.6c-1.7-.2-3.3-1.3-4.1-3.1 2-.3 3.6.5 4.1 2.2" fill="url(#lg)" fill-opacity=".5" stroke="url(#lg)" stroke-width="1.3" stroke-linejoin="round"/><path d="M24 17.6c1.7-.2 3.3-1.3 4.1-3.1-2-.3-3.6.5-4.1 2.2" fill="url(#lg)" fill-opacity=".5" stroke="url(#lg)" stroke-width="1.3" stroke-linejoin="round"/><circle cx="15" cy="28" r="1.1" fill="url(#lg)"/><circle cx="33" cy="28" r="1.1" fill="url(#lg)"/><circle cx="18" cy="34" r=".8" fill="url(#lg)" fill-opacity=".7"/><circle cx="30" cy="34" r=".8" fill="url(#lg)" fill-opacity=".7"/></svg>`;
 
@@ -81,6 +110,7 @@ ${body}
       <a href="${CONFIG.workshopUrl}" target="_blank" rel="noopener">创意工坊</a>
       <a href="${about}">关于本站</a>
       ${CONFIG.repoUrl ? `<a href="${CONFIG.repoUrl}" target="_blank" rel="noopener">GitHub</a>` : ""}
+      <a href="${rel}admin/index.html" rel="nofollow" title="管理员入口" style="opacity:.5">管理</a>
     </div>
   </div>
 </footer>
@@ -289,6 +319,35 @@ export function aboutPage(data) {
   return layout({ rel, page: "about", active: "about", title: "关于本站", description: "关于万物书图鉴资料站与数据来源。", body });
 }
 
+/* ============================ 编辑后台 ============================ */
+export function adminPage() {
+  const cfg = JSON.stringify({
+    repo: CONFIG.repo,
+    admins: CONFIG.admins,
+    oauthClientId: CONFIG.oauthClientId,
+    dataPath: CONFIG.dataPath,
+    imagesPath: CONFIG.imagesPath,
+  }).replace(/</g, "\\u003c");
+  return `<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>编辑后台 · ${esc(CONFIG.name)}</title>
+<meta name="robots" content="noindex,nofollow">
+<meta name="color-scheme" content="dark light">
+<link rel="icon" type="image/svg+xml" href="../assets/logo.svg">
+<link rel="stylesheet" href="../assets/styles.css">
+<link rel="stylesheet" href="../assets/admin.css">
+</head>
+<body class="admin">
+<main id="main" hidden></main>
+<script>window.__WWS_ADMIN__=${cfg};</script>
+<script src="../assets/admin.js" defer></script>
+</body>
+</html>`;
+}
+
 /* ============================ 404 ============================ */
 export function notFoundPage() {
   const base = CONFIG.siteUrl ? new URL(CONFIG.siteUrl).pathname.replace(/\/?$/, "/") : "./";
@@ -306,10 +365,11 @@ export function notFoundPage() {
 /* ============================ 构建主流程 ============================ */
 async function main() {
   const data = JSON.parse(await readFile(DATA, "utf8"));
+  data.categories = buildCategories(data.entries, data.categories || []);
   data.entriesByCat = {};
-  const catSlug = new Map(data.categories.map((c) => [c.name, c.slug]));
+  const slugOf = new Map(data.categories.map((c) => [c.name, c.slug]));
   for (const e of data.entries) {
-    e.categorySlug = catSlug.get(e.category) || catSlug.values().next().value;
+    e.categorySlug = slugOf.get(e.category) || catSlug(e.category);
     (data.entriesByCat[e.categorySlug] ||= []).push(e);
   }
   const catByName = new Map(data.categories.map((c) => [c.slug, c]));
@@ -317,10 +377,11 @@ async function main() {
   await rm(DIST, { recursive: true, force: true });
   await mkdir(join(DIST, "e"), { recursive: true });
   await mkdir(join(DIST, "c"), { recursive: true });
+  await mkdir(join(DIST, "admin"), { recursive: true });
   await mkdir(join(DIST, "assets"), { recursive: true });
 
   // 静态资源
-  for (const f of ["styles.css", "app.js", "logo.svg"]) await cp(join(SRC, f), join(DIST, "assets", f));
+  for (const f of ["styles.css", "app.js", "logo.svg", "admin.css", "admin.js"]) await cp(join(SRC, f), join(DIST, "assets", f));
   await cp(join(SRC, "images"), join(DIST, "images"), { recursive: true });
   await writeFile(join(DIST, ".nojekyll"), "");
 
@@ -328,6 +389,7 @@ async function main() {
   await writeFile(join(DIST, "index.html"), homePage(data));
   await writeFile(join(DIST, "about.html"), aboutPage(data));
   await writeFile(join(DIST, "404.html"), notFoundPage());
+  await writeFile(join(DIST, "admin", "index.html"), adminPage());
   for (const e of data.entries) {
     await writeFile(join(DIST, "e", `${e.slug}.html`), entryPage(e, catByName.get(e.categorySlug), data));
   }
@@ -336,7 +398,7 @@ async function main() {
   }
 
   // SEO
-  await writeFile(join(DIST, "robots.txt"), `User-agent: *\nAllow: /\n${CONFIG.siteUrl ? `Sitemap: ${CONFIG.siteUrl.replace(/\/?$/, "/")}sitemap.xml\n` : ""}`);
+  await writeFile(join(DIST, "robots.txt"), `User-agent: *\nAllow: /\nDisallow: /admin/\n${CONFIG.siteUrl ? `Sitemap: ${CONFIG.siteUrl.replace(/\/?$/, "/")}sitemap.xml\n` : ""}`);
   if (CONFIG.siteUrl) {
     const base = CONFIG.siteUrl.replace(/\/?$/, "/");
     const urls = ["", "about.html", ...data.entries.map((e) => `e/${e.slug}.html`), ...data.categories.map((c) => `c/${c.slug}.html`)];
@@ -347,8 +409,7 @@ async function main() {
     await writeFile(join(DIST, "sitemap.xml"), xml);
   }
 
-  const imgs = data.entries.length;
-  console.log(`✓ 构建完成：${data.entries.length} 词条页 / ${data.categories.length} 分类页 / ${imgs} 条数据`);
+  console.log(`✓ 构建完成：${data.entries.length} 词条页 / ${data.categories.length} 分类页 / 编辑后台 -> dist/admin/`);
   console.log(`  输出目录 -> ${DIST}`);
 }
 
