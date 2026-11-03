@@ -4,6 +4,11 @@ node_modules/
 # 构建产物
 dist/
 
+# Cloudflare Worker
+worker/public/
+worker/.wrangler/
+.dev.vars
+
 # 侦察/临时文件
 research/
 *.log

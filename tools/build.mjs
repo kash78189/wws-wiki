@@ -5,6 +5,7 @@
 import { mkdir, writeFile, cp, rm, readFile } from "node:fs/promises";
 import { join, dirname, basename } from "node:path";
 import { fileURLToPath } from "node:url";
+import { adminHtml } from "./admin-html.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const SRC = join(ROOT, "src");
@@ -321,31 +322,18 @@ export function aboutPage(data) {
 
 /* ============================ 编辑后台 ============================ */
 export function adminPage() {
-  const cfg = JSON.stringify({
-    repo: CONFIG.repo,
-    admins: CONFIG.admins,
-    oauthClientId: CONFIG.oauthClientId,
-    dataPath: CONFIG.dataPath,
-    imagesPath: CONFIG.imagesPath,
-  }).replace(/</g, "\\u003c");
-  return `<!DOCTYPE html>
-<html lang="zh-CN" data-theme="dark">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>编辑后台 · ${esc(CONFIG.name)}</title>
-<meta name="robots" content="noindex,nofollow">
-<meta name="color-scheme" content="dark light">
-<link rel="icon" type="image/svg+xml" href="../assets/logo.svg">
-<link rel="stylesheet" href="../assets/styles.css">
-<link rel="stylesheet" href="../assets/admin.css">
-</head>
-<body class="admin">
-<main id="main" hidden></main>
-<script>window.__WWS_ADMIN__=${cfg};</script>
-<script src="../assets/admin.js" defer></script>
-</body>
-</html>`;
+  return adminHtml({
+    title: `编辑后台 · ${CONFIG.name}`,
+    base: "../",
+    cfg: {
+      mode: "github",
+      repo: CONFIG.repo,
+      admins: CONFIG.admins,
+      oauthClientId: CONFIG.oauthClientId,
+      dataPath: CONFIG.dataPath,
+      imagesPath: CONFIG.imagesPath,
+    },
+  });
 }
 
 /* ============================ 404 ============================ */

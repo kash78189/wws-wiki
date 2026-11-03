@@ -8,7 +8,9 @@
   const DATA = CFG.dataPath || "data/wws.json";
   const IMGDIR = CFG.imagesPath || "src/images";
   const API = "https://api.github.com";
-  const LS = "wws.admin.token";
+  const MODE = CFG.mode === "worker" ? "worker" : "github";
+  const API_BASE = (CFG.apiBase || "").replace(/\/+$/, "");
+  const LS = MODE === "worker" ? "wws.admin.session" : "wws.admin.token";
   const $ = (s, r = document) => r.querySelector(s);
 
   let token = "";
@@ -79,8 +81,46 @@
   }
   const repoPath = (p) => `/repos/${OWNER}/${NAME}/contents/${p}`;
 
-  async function authenticate(tk) {
-    const tmp = token; token = tk;
+  /* ---------- 后台服务（Cloudflare Worker） ---------- */
+  async function wfetch(path, opts = {}) {
+    const res = await fetch(API_BASE + path, {
+      method: opts.method || "GET",
+      headers: Object.assign({ "content-type": "application/json" },
+        opts.auth === false || !token ? {} : { authorization: "Bearer " + token }),
+      body: opts.body
+    });
+    const text = await res.text();
+    let json = null;
+    try { json = text ? JSON.parse(text) : null; } catch (e) { /* ignore */ }
+    if (!res.ok) {
+      const err = new Error((json && (json.error || json.message)) || res.status + " " + res.statusText);
+      err.status = res.status; err.json = json;
+      throw err;
+    }
+    return json;
+  }
+
+  /** 图片按内容 SHA-1 命名，抓取器 / 后台保持一致 */
+  async function imageName(file, buf) {
+    const hash = hex(await crypto.subtle.digest("SHA-1", buf)).slice(0, 20);
+    const ext = /\.svg$/i.test(file.name) ? ".svg" : /\.png$/i.test(file.name) ? ".png" : /\.webp$/i.test(file.name) ? ".webp" : ".jpg";
+    return hash + ext;
+  }
+  function binOf(buf) {
+    let bin = "";
+    for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode.apply(null, buf.subarray(i, i + 0x8000));
+    return bin;
+  }
+
+  async function authenticate(cred) {
+    if (MODE === "worker") {
+      const r = await wfetch("/api/login", { method: "POST", auth: false, body: JSON.stringify(cred) });
+      token = r.token;
+      user = { login: r.user, avatar_url: "" };
+      localStorage.setItem(LS, token);
+      return true;
+    }
+    const tmp = token; token = cred;
     try {
       const u = await gh("/user");
       const r = await gh(`/repos/${OWNER}/${NAME}`);
@@ -89,11 +129,23 @@
       const allow = CFG.admins || [];
       if (allow.length && !allow.includes(u.login)) throw new Error("该账号不在管理员名单中：" + u.login);
       user = u;
-      localStorage.setItem(LS, tk);
+      localStorage.setItem(LS, cred);
       return true;
     } catch (e) { token = tmp; throw e; }
   }
+
+  /** 用本地保存的凭据恢复会话 */
+  async function restore() {
+    if (MODE === "worker") {
+      const r = await wfetch("/api/me");
+      user = { login: r.user, avatar_url: "" };
+      return true;
+    }
+    return authenticate(token);
+  }
+
   function logout() {
+    if (MODE === "worker" && token) { try { wfetch("/api/logout", { method: "POST" }).catch(() => {}); } catch (e) { /* ignore */ } }
     localStorage.removeItem(LS);
     token = ""; user = null; data = null; sha = null; current = null;
     renderLogin();
@@ -101,63 +153,92 @@
 
   /* ---------- 文件读写 ---------- */
   async function loadData() {
-    const res = await gh(repoPath(DATA) + "?ref=" + BRANCH);
-    sha = res.sha;
-    data = JSON.parse(b64decode(res.content));
+    if (MODE === "worker") {
+      const r = await wfetch("/api/data");
+      sha = r.sha;
+      data = r.data;
+    } else {
+      const res = await gh(repoPath(DATA) + "?ref=" + BRANCH);
+      sha = res.sha;
+      data = JSON.parse(b64decode(res.content));
+    }
     data.entries.sort((a, b) => a.id - b.id);
   }
   async function saveData(message) {
-    const body = JSON.stringify({
-      message: message || "chore(admin): 更新词条数据",
-      content: b64encode(JSON.stringify(data, null, 1)),
-      sha, branch: BRANCH
-    });
-    const res = await gh(repoPath(DATA), { method: "PUT", body });
-    sha = res.content.sha;
+    const msg = message || "chore(admin): 更新词条数据";
+    let url = null;
+    if (MODE === "worker") {
+      const r = await wfetch("/api/data", { method: "PUT", body: JSON.stringify({ sha, data, message: msg }) });
+      sha = r.sha;
+      url = r.commit || null;
+    } else {
+      const body = JSON.stringify({ message: msg, content: b64encode(JSON.stringify(data, null, 1)), sha, branch: BRANCH });
+      const res = await gh(repoPath(DATA), { method: "PUT", body });
+      sha = res.content.sha;
+      url = res.commit && res.commit.html_url;
+    }
     dirty = false;
-    return res.commit && res.commit.html_url;
+    return url;
   }
   async function uploadImage(file) {
     const buf = new Uint8Array(await file.arrayBuffer());
-    const name = hex(await crypto.subtle.digest("SHA-1", buf)).slice(0, 20) + (/\.svg$/i.test(file.name) ? ".svg" : (/\.png$/i.test(file.name) ? ".png" : (/\.webp$/i.test(file.name) ? ".webp" : ".jpg")));
-    let bin = ""; for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode.apply(null, buf.subarray(i, i + 0x8000));
+    const name = await imageName(file, buf);
+    if (MODE === "worker") {
+      const r = await wfetch("/api/upload", { method: "PUT", body: JSON.stringify({ name, content: btoa(binOf(buf)) }) });
+      return r.path;
+    }
     await gh(repoPath(IMGDIR + "/" + name), {
       method: "PUT",
-      body: JSON.stringify({ message: "chore(admin): 上传图片 " + name, content: btoa(bin), branch: BRANCH })
+      body: JSON.stringify({ message: "chore(admin): 上传图片 " + name, content: btoa(binOf(buf)), branch: BRANCH })
     });
     return "images/" + name;
   }
 
   /* ---------- 登录界面 ---------- */
   function renderLogin(msg, kind) {
+    const isWorker = MODE === "worker";
     const card = h("div", { class: "login-card" },
       h("div", { class: "rune", html: '<svg viewBox="0 0 64 64" fill="none"><path d="M32 6c-7 0-12 5-12 12v4h-4a4 4 0 0 0-4 4v26a4 4 0 0 0 4 4h32a4 4 0 0 0 4-4V26a4 4 0 0 0-4-4h-4v-4c0-7-5-12-12-12Zm0 6c4 0 6 3 6 6v4H26v-4c0-3 2-6 6-6Z" stroke="#e9b872" stroke-width="2.4" stroke-linejoin="round"/><circle cx="32" cy="38" r="4" fill="#e9b872"/></svg>' }),
       h("h1", null, "编辑后台"),
       h("p", { class: "sub" }, "仅限《万物书》图鉴管理员使用。普通访客无需登录，可自由浏览全部内容。"),
       msg ? h("div", { class: "alert " + (kind || "err") }, msg) : null,
-      h("div", { class: "field" },
-        h("label", null, "GitHub 访问令牌 (Token)"),
-        h("input", { type: "password", id: "tk", placeholder: "github_pat_… 或 ghp_…", autocomplete: "off", spellcheck: "false" })
-      ),
-      h("button", { class: "btn primary block", id: "go" }, "验证并登录"),
-      h("p", { class: "hintline", html: '需要一个 <b>Fine-grained token</b>，权限勾选本仓库的 <code>Contents: Read and write</code>。<a href="https://github.com/settings/tokens?type=beta" target="_blank" rel="noopener">点此创建 →</a>' }),
-      CFG.oauthClientId ? h("button", { class: "btn block", id: "dev", style: "margin-top:10px" }, "使用 GitHub 账号登录") : null,
-      h("p", { class: "hintline", style: "text-align:center;margin-top:18px" }, "令牌仅保存在你自己的浏览器中，不会上传到任何服务器。")
+      isWorker
+        ? h("div", null,
+            h("div", { class: "field" }, h("label", null, "用户名"), h("input", { type: "text", id: "un", autocomplete: "username", spellcheck: "false" })),
+            h("div", { class: "field" }, h("label", null, "密码"), h("input", { type: "password", id: "pw", autocomplete: "current-password" }))
+          )
+        : h("div", null,
+            h("div", { class: "field" }, h("label", null, "GitHub 访问令牌 (Token)"), h("input", { type: "password", id: "tk", placeholder: "github_pat_… 或 ghp_…", autocomplete: "off", spellcheck: "false" })),
+            h("p", { class: "hintline", html: '需要一个 <b>Fine-grained token</b>，权限勾选本仓库的 <code>Contents: Read and write</code>。<a href="https://github.com/settings/tokens?type=beta" target="_blank" rel="noopener">点此创建 →</a>' })
+          ),
+      h("button", { class: "btn primary block", id: "go" }, isWorker ? "登录" : "验证并登录"),
+      !isWorker && CFG.oauthClientId ? h("button", { class: "btn block", id: "dev", style: "margin-top:10px" }, "使用 GitHub 账号登录") : null,
+      h("p", { class: "hintline", style: "text-align:center;margin-top:18px" }, isWorker
+        ? "账号由站长分配；登录状态仅保存在你自己的浏览器中。"
+        : "令牌仅保存在你自己的浏览器中，不会上传到任何服务器。")
     );
     const wrap = h("div", { class: "login-wrap" }, card);
     document.body.replaceChildren(topbar(), wrap);
-    const input = $("#tk", wrap);
+    const first = $("#" + (isWorker ? "un" : "tk"), wrap);
     const submit = async () => {
-      const tk = input.value.trim();
-      if (!tk) return;
-      const btn = $("#go", wrap); btn.disabled = true; btn.textContent = "验证中…";
-      try { await authenticate(tk); await boot(); }
-      catch (e) { renderLogin(e.message, "err"); }
+      const btn = $("#go", wrap); btn.disabled = true; btn.textContent = isWorker ? "登录中…" : "验证中…";
+      try {
+        if (isWorker) {
+          const u = $("#un", wrap).value.trim(), p = $("#pw", wrap).value;
+          if (!u || !p) throw new Error("请输入用户名和密码");
+          await authenticate({ user: u, password: p });
+        } else {
+          const tk = $("#tk", wrap).value.trim();
+          if (!tk) throw new Error("请输入令牌");
+          await authenticate(tk);
+        }
+        await boot();
+      } catch (e) { renderLogin(e.message, "err"); }
     };
     $("#go", wrap).addEventListener("click", submit);
-    input.addEventListener("keydown", (e) => { if (e.key === "Enter") submit(); });
-    if (CFG.oauthClientId) $("#dev", wrap).addEventListener("click", deviceFlow);
-    input.focus();
+    card.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); submit(); } });
+    if (!isWorker && CFG.oauthClientId) $("#dev", wrap).addEventListener("click", deviceFlow);
+    first.focus();
   }
 
   async function deviceFlow() {
@@ -457,8 +538,8 @@
     if (!OWNER || !NAME) { renderLogin("部署配置缺失：仓库信息未注入。请在构建时设置 GH_OWNER / GH_REPO。", "err"); return; }
     token = localStorage.getItem(LS) || "";
     if (token) {
-      try { await authenticate(token); return boot(); }
-      catch (e) { localStorage.removeItem(LS); renderLogin("登录已失效，请重新登录。"); return; }
+      try { await restore(); return boot(); }
+      catch (e) { localStorage.removeItem(LS); token = ""; renderLogin("登录已失效，请重新登录。"); return; }
     }
     renderLogin();
   });

@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<title>admin-worker-test</title>
+<link rel="stylesheet" href="../../src/styles.css">
+<link rel="stylesheet" href="../../src/admin.css">
+</head>
+<body class="admin">
+<script>
+/* Worker 模式（账号密码）后台自测：mock /api/* */
+const SAMPLE = { meta: {}, entries: [
+  { id: 1, slug: "lotus", title: "幻想莲花", code: "lotus", category: "幻想植物", level: 1, image: "", html: "<p>一朵<b>莲花</b></p>", excerpt: "莲花", keywords: [] },
+  { id: 2, slug: "tool", title: "幻想道具", code: "", category: "幻想道具", level: 2, image: "", html: "<p>道具</p>", excerpt: "道具", keywords: [] }
+]};
+window.__WWS_ADMIN__ = { mode: "worker", apiBase: "", repo: { owner: "example", name: "wws-wiki", branch: "main" }, dataPath: "data/wws.json", imagesPath: "src/images" };
+const LOG = [];
+const jr = (j, s = 200) => new Response(JSON.stringify(j), { status: s, headers: { "content-type": "application/json" } });
+window.fetch = async (url, opts = {}) => {
+  const p = String(url), m = opts.method || "GET";
+  LOG.push(m + " " + p);
+  if (p.endsWith("/api/login")) {
+    const b = JSON.parse(opts.body);
+    return b.user === "kash" && b.password === "pw" ? jr({ token: "tok", user: "kash" }) : jr({ error: "用户名或密码错误" }, 401);
+  }
+  if (p.endsWith("/api/me")) return jr({ user: "kash" });
+  if (p.endsWith("/api/data")) return m === "GET" ? jr({ sha: "s1", data: SAMPLE }) : jr({ sha: "s2", commit: "https://github.com/example/wws-wiki/commit/x" });
+  return jr({ error: "unknown" }, 404);
+};
+window.addEventListener("error", (e) => { document.title = "FAIL:" + e.message; });
+const steps = [];
+const fail = (m) => { document.title = "FAIL:" + m + " || " + steps.join(" | "); };
+
+setTimeout(() => {  // 登录界面 + 登录
+  const u = document.querySelector("#un"), p = document.querySelector("#pw");
+  if (!u || !p) return fail("no username/password inputs");
+  if (document.querySelector("#tk")) return fail("github token field leaked into worker mode");
+  steps.push("login-ui-ok");
+  u.value = "kash"; p.value = "pw";
+  document.querySelector("#go").click();
+}, 500);
+
+setTimeout(() => {  // 工作区
+  if (!document.querySelector(".admin-wrap")) return fail("workspace not rendered after login");
+  const n = document.querySelectorAll(".entry-item").length;
+  if (n !== 2) return fail("entry list = " + n);
+  if (!document.querySelector(".preview-pane")) return fail("no preview pane");
+  steps.push("workspace-ok(2 entries)");
+  const b = [...document.querySelectorAll("button")].find((x) => x.textContent.includes("保存并发布"));
+  if (!b) return fail("no save button");
+  b.click();
+}, 1500);
+
+setTimeout(() => {  // 保存
+  const bar = document.querySelector(".status");
+  const t = bar ? bar.textContent : "no-status";
+  if (!t.includes("已提交")) return fail("save status: " + t);
+  steps.push("save-ok");
+  document.title = "PASS:" + steps.join(" | ") + " :: " + LOG.join(" ~ ");
+}, 2500);
+</script>
+<script src="../../src/admin.js" defer></script>
+</body>
+</html>

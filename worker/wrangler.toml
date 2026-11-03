@@ -1,0 +1,24 @@
+name = "wws-admin"
+main = "src/index.js"
+compatibility_date = "2024-11-01"
+
+# 后台前端静态资源（由 tools/build-worker.mjs 生成到 worker/public/）
+[assets]
+directory = "./public"
+binding = "ASSETS"
+not_found_handling = "none"
+
+# 非机密的公开配置
+[vars]
+GH_OWNER = "kash78189"
+GH_REPO = "wws-wiki"
+GH_BRANCH = "main"
+DATA_PATH = "data/wws.json"
+IMAGES_PATH = "src/images"
+# 允许跨域调用本 API 的来源（留空则只允许同源）
+ALLOWED_ORIGINS = "https://kash78189.github.io"
+
+# ── 机密（**不要**写在这里，用命令设置）──────────────────────────
+#   wrangler secret put GITHUB_TOKEN      # 能写本仓库的 GitHub 令牌
+#   wrangler secret put SESSION_SECRET    # 任意长随机串
+#   wrangler secret put ADMIN_USERS       # node tools/passwd.mjs 生成的 JSON

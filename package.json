@@ -8,6 +8,12 @@
     "scrape": "node tools/scrape.mjs",
     "build": "node tools/build.mjs",
     "dev": "node tools/build.mjs --serve",
-    "all": "node tools/scrape.mjs && node tools/build.mjs"
+    "all": "node tools/scrape.mjs && node tools/build.mjs",
+    "passwd": "node tools/passwd.mjs",
+    "worker:build": "node tools/build-worker.mjs",
+    "worker:dev": "node tools/build-worker.mjs && wrangler dev",
+    "worker:deploy": "node tools/build-worker.mjs && wrangler deploy",
+    "worker:secret": "wrangler secret put",
+    "test": "node worker/test/local-test.mjs && node tools/test/run.mjs"
   }
 }

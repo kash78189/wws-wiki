@@ -19,7 +19,12 @@ node tools/build.mjs
 
 # 3. 本地预览
 npx serve dist          # 或任意静态服务器
+
+# 4. 跑测试（接口 20 项断言 + 两套后台的无头浏览器端到端）
+npm test
 ```
+
+**在线地址**：https://kash78189.github.io/wws-wiki/
 
 ---
 
@@ -30,14 +35,23 @@ npx serve dist          # 或任意静态服务器
 ├─ data/wws.json          # 归一化后的全部词条数据（构建输入）
 ├─ tools/
 │  ├─ scrape.mjs          # 抓取器：拉取接口 + 下载图片 + 清洗正文
-│  └─ build.mjs           # 生成器：产出 dist/ 静态站点
+│  ├─ build.mjs           # 生成器：产出 dist/ 静态站点
+│  ├─ admin-html.mjs      # 后台页面骨架（两种模式共用）
+│  ├─ build-worker.mjs    # 生成 Worker 的前端资源 -> worker/public/
+│  ├─ passwd.mjs          # 生成管理员密码哈希
+│  └─ test/               # 后台前端自测（无头浏览器）
 ├─ src/
 │  ├─ styles.css          # 站点样式（设计稿即此文件）
 │  ├─ app.js              # 搜索 / 筛选 / 排序 / 主题切换
 │  ├─ logo.svg            # 站点图标
 │  ├─ admin.css           # 编辑后台样式
-│  ├─ admin.js            # 编辑后台逻辑（GitHub 后端）
+│  ├─ admin.js            # 编辑后台逻辑（GitHub / 账号密码 双模式）
 │  └─ images/             # 本地化图片（抓取产物）
+├─ worker/                # Cloudflare Worker：账号密码后台 + API
+│  ├─ src/index.js
+│  ├─ wrangler.toml
+│  ├─ test/local-test.mjs # 接口自测（20 项断言）
+│  └─ README.md           # 部署 + Access 网关指南
 ├─ dist/                  # 构建产物（不提交，由 CI 生成）
 └─ .github/workflows/deploy.yml
 ```
@@ -89,33 +103,47 @@ npx serve dist          # 或任意静态服务器
 
 ## 编辑后台（仅管理员）
 
-地址：`https://<用户名>.github.io/<仓库名>/admin/`（页脚也有一个不显眼的「管理」入口）
+后台有**两种接入方式**，同一套界面代码，按部署环境自动切换：
 
-**设计思路**：站点是纯静态的（没有服务器），所以直接把 **GitHub 仓库当作数据库**。
-管理员在网页上编辑 → 后台用 GitHub API 提交一次 commit → GitHub Actions 自动重新构建并发布（约 1 分钟）。
-好处：不用另外买服务器、数据有完整版本历史、可以随时回滚。
+| 模式 | 登录方式 | 适用 |
+| --- | --- | --- |
+| **static** | GitHub 令牌 / 仓库写权限 | 已经搭好了，零成本，站在 `/admin/` |
+| **worker** | 用户名 + 密码（外层 Cloudflare Access 网关） | 不暴露 GitHub、可自由分配账号，见 [worker/README.md](./worker/README.md) |
 
-### 谁能登录
+### 地址
 
-登录需要满足两个条件（**由 GitHub 自己把关**，不靠本站）：
+- 静态模式：`https://kash78189.github.io/wws-wiki/admin/`
+- Worker 模式：`https://wws-admin.<子域>.workers.dev/`（部署后得到，先过 Access 邮箱验证）
 
-1. 持有一个 **Fine-grained Personal Access Token**，勾选了本仓库的 `Contents: Read and write`
+页脚有一个不显眼的「管理」入口。
+
+### 设计思路
+
+站点是纯静态的（没有服务器），所以直接把 **GitHub 仓库当作数据库**。
+管理员在网页上编辑 → 后台把改动变成一次 commit → GitHub Actions 自动重新构建并发布（约 1 分钟）。
+不用另外买服务器、数据有完整版本历史、随时可以回滚。
+
+### 静态模式：谁能登录
+
+两个条件（**由 GitHub 自己把关**，不靠本站）：
+
+1. 持有一个 **Fine-grained Personal Access Token**，勾选本仓库 `Contents: Read and write`
 2. 该账号是**本仓库的协作者**（有写权限）
-
-所以「只有我们几个能用」是天然成立的：不在仓库里给写权限，就无法登录。
 
 > 邀请管理员：仓库 **Settings → Collaborators → Add people**。
 
-### 管理员怎么登录
+登录步骤：到 [创建 token](https://github.com/settings/tokens?type=beta) → **fine-grained** → 只勾选本站仓库 → `Contents: Read and write` → 粘进后台。
+令牌只存在管理员自己的浏览器（localStorage），不经任何第三方服务器。
 
-1. 打开 [创建 token](https://github.com/settings/tokens?type=beta) → **Generate new token (fine-grained)**
-2. **Repository access** 选 *Only select repositories* → 选中本站仓库
-3. **Permissions → Repository permissions → Contents** 选 **Read and write**
-4. 生成后复制，粘贴到后台登录框即可
+### Worker 模式：账号密码 + 网关
 
-Token 只存在管理员自己的浏览器（localStorage），不会经过任何第三方服务器。
+完整步骤见 **[worker/README.md](./worker/README.md)**，三句话概括：
 
-### 能做什么
+1. `wrangler secret put` 设三个机密（GitHub 令牌 / 会话密钥 / 管理员密码哈希）
+2. `npm run worker:deploy` 部署
+3. 在 Cloudflare Zero Trust 里建一个 Access 应用，只允许你们几个邮箱通过
+
+### 能做什么（两种模式相同）
 
 - 搜索 / 筛选词条列表，即时编辑标题、分类、prefab 代号、排序、日期
 - 富文本正文编辑 + 实时预览，一键由正文生成摘要

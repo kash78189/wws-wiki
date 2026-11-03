@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<title>admin-github-test</title>
+<link rel="stylesheet" href="../../src/styles.css">
+<link rel="stylesheet" href="../../src/admin.css">
+</head>
+<body class="admin">
+<script>
+/* 静态模式（GitHub 令牌）后台自测：mock GitHub API */
+const SAMPLE = { meta: {}, entries: [
+  { id: 1, slug: "lotus", title: "幻想莲花", code: "lotus", category: "幻想植物", level: 1, image: "", html: "<p>一朵<b>莲花</b></p>", excerpt: "莲花", keywords: [{ title: "幻想道具", slug: "tool", image: "" }] },
+  { id: 2, slug: "tool", title: "幻想道具", code: "", category: "幻想道具", level: 2, image: "", html: "<p>道具</p>", excerpt: "道具", keywords: [] }
+]};
+const enc = (s) => { const b = new TextEncoder().encode(s); let x = ""; for (const c of b) x += String.fromCharCode(c); return btoa(x); };
+window.__WWS_ADMIN__ = { mode: "github", repo: { owner: "example", name: "wws-wiki", branch: "main" }, admins: [], oauthClientId: "", dataPath: "data/wws.json", imagesPath: "src/images" };
+const LOG = [];
+window.fetch = async (url, opts = {}) => {
+  const u = String(url), m = opts.method || "GET";
+  LOG.push(m + " " + u.replace("https://api.github.com", ""));
+  const ok = (j) => new Response(JSON.stringify(j), { status: 200, headers: { "content-type": "application/json" } });
+  if (u.endsWith("/user")) return ok({ login: "tester", avatar_url: "" });
+  if (/\/repos\/example\/wws-wiki$/.test(u)) return ok({ permissions: { push: true } });
+  if (u.includes("/contents/data/wws.json")) {
+    if (m === "PUT") return ok({ content: { sha: "newsha" }, commit: { html_url: "https://github.com/example/wws-wiki/commit/abc" } });
+    return ok({ sha: "oldsha", content: enc(JSON.stringify(SAMPLE)) });
+  }
+  return new Response('{"message":"not found"}', { status: 404 });
+};
+localStorage.setItem("wws.admin.token", "fake-token");
+window.addEventListener("error", (e) => { document.title = "FAIL:" + e.message; });
+const steps = [];
+const fail = (m) => { document.title = "FAIL:" + m + " || " + steps.join(" | "); };
+
+setTimeout(() => {  // 工作区
+  if (!document.querySelector(".admin-wrap")) return fail("workspace not rendered");
+  const n = document.querySelectorAll(".entry-item").length;
+  if (n !== 2) return fail("entry list = " + n);
+  if (document.querySelector("#un")) return fail("worker fields leaked into github mode");
+  if (!document.querySelector("#tk") === false) { /* 已登录，不应有登录框 */ }
+  steps.push("workspace-ok(2 entries)");
+  const h2 = document.querySelector(".editor-head h2");
+  if (!h2 || h2.textContent !== "幻想莲花") return fail("editor title = " + (h2 && h2.textContent));
+  steps.push("editor-ok");
+  const b = [...document.querySelectorAll("button")].find((x) => x.textContent.includes("保存并发布"));
+  if (!b) return fail("no save button");
+  b.click();
+}, 1200);
+
+setTimeout(() => {  // 保存
+  const bar = document.querySelector(".status");
+  const t = bar ? bar.textContent : "no-status";
+  if (!t.includes("已提交")) return fail("save status: " + t);
+  steps.push("save-ok");
+  document.title = "PASS:" + steps.join(" | ") + " :: " + LOG.join(" ~ ");
+}, 2200);
+</script>
+<script src="../../src/admin.js" defer></script>
+</body>
+</html>
